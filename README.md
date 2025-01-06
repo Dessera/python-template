@@ -1,0 +1,1 @@
+# Standard Python development environment with poetry2nix

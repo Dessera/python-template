@@ -1,0 +1,34 @@
+{
+  pkgs,
+  poetry2nix,
+  python,
+}:
+let
+  p2n = import poetry2nix { inherit pkgs; };
+
+  targetAttrs = {
+    inherit python;
+    projectDir = p2n.cleanPythonSources {
+      src = ./.;
+    };
+    overrides = p2n.overrides.withDefaults (final: prev: { });
+  };
+
+  target = { p2n }: p2n.mkPoetryApplication targetAttrs;
+in
+{
+  packages = {
+    default = pkgs.callPackage target { inherit p2n; };
+  };
+
+  env = {
+    default = p2n.mkPoetryEnv (
+      targetAttrs
+      // {
+        editablePackageSources = {
+          {{ project_name }} = ./.;
+        };
+      }
+    );
+  };
+}
