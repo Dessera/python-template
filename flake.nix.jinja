@@ -1,12 +1,9 @@
 {
-  description = "Standard Python development environment with poetry2nix";
+  description = "{{ description }}";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-parts = {
-      url = "github:hercules-ci/flake-parts";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    flake-parts.url = "github:hercules-ci/flake-parts";
 
     poetry2nix = {
       url = "github:nix-community/poetry2nix";
@@ -34,28 +31,31 @@
         perSystem =
           { pkgs, system, ... }:
           let
-            python = pkgs.python313;
+            {% set major, minor = py_version.split('.') %}
+            python = pkgs.python{{ major }}{{ minor }};
             py = import ./python.nix {
               inherit pkgs poetry2nix python;
             };
 
-            vscodium' = withSystem system ({ inputs', ... }: inputs'.nixcode.packages.python);
+            codium = withSystem system ({ inputs', ... }: inputs'.nixcode.packages.python);
           in
           {
             packages = py.packages.default;
 
             devShells = {
               default = pkgs.mkShell {
-                packages = with pkgs; [
-                  nixd
-                  nixfmt-rfc-style
+                packages =
+                  (with pkgs; [
+                    nixd
+                    nixfmt-rfc-style
 
-                  py.env.default
-                  ruff
-                  poetry
-
-                  vscodium'
-                ];
+                    py.env.default
+                    ruff
+                    poetry
+                  ])
+                  ++ [
+                    codium
+                  ];
               };
             };
           };
