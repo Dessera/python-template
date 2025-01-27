@@ -33,5 +33,5 @@ py_version:
 
 _exclude:
   - copier.yml
-  - README.md
+  - .jinja
   - .git  # for local development only

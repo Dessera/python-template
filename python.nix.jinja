@@ -1,34 +1,74 @@
+{%- import '.jinja/project.jinja' as proj with context -%}
 {
   pkgs,
-  poetry2nix,
   python,
+  uv2nix,
+  pyproject-nix,
+  pyproject-build-systems,
 }:
 let
-  p2n = import poetry2nix { inherit pkgs; };
+  util = pkgs.callPackage pyproject-nix.build.util {};
 
-  targetAttrs = {
-    inherit python;
-    projectDir = p2n.cleanPythonSources {
-      src = ./.;
-    };
-    overrides = p2n.overrides.withDefaults (final: prev: { });
+  workspace = uv2nix.lib.workspace.loadWorkspace {
+    workspaceRoot = ./.;
   };
 
-  target = { p2n }: p2n.mkPoetryApplication targetAttrs;
+  overlay = workspace.mkPyprojectOverlay {
+    sourcePreference = "wheel";
+  };
+
+  pyprojectOverrides = _final: _prev: {
+  };
+
+  pythonSet =
+    (pkgs.callPackage pyproject-nix.build.packages {
+      inherit python;
+    }).overrideScope
+      (
+        pkgs.lib.composeManyExtensions [
+          pyproject-build-systems.overlays.default
+          overlay
+          pyprojectOverrides
+        ]
+      );
+
+  editableOverlay = workspace.mkEditablePyprojectOverlay {
+    root = "$REPO_ROOT";
+  };
+
+  editablePythonSet = pythonSet.overrideScope (
+    pkgs.lib.composeManyExtensions [
+      editableOverlay
+      (final: prev: {
+        {{ proj.package_name }} = prev.{{ proj.package_name }}.overrideAttrs (old: {
+          src = pkgs.lib.fileset.toSource {
+            root = old.src;
+            fileset = pkgs.lib.fileset.unions [
+              (old.src + "/pyproject.toml")
+              (old.src + "/README.md")
+              (old.src + "/src/{{ proj.module_name }}/__init__.py")
+            ];
+          };
+          nativeBuildInputs =
+            old.nativeBuildInputs
+            ++ (final.resolveBuildSystem {
+              editables = [ ];
+            });
+        });
+      })
+    ]
+  );
 in
-{
+rec {
   packages = {
-    default = pkgs.callPackage target { inherit p2n; };
+    default = util.mkApplication {
+      venv = env.default;
+      package = pythonSet.{{ proj.package_name }};
+    };
   };
 
   env = {
-    default = p2n.mkPoetryEnv (
-      targetAttrs
-      // {
-        editablePackageSources = {
-          {{ project_name }} = ./.;
-        };
-      }
-    );
+    default = pythonSet.mkVirtualEnv "{{ project_name }}-env" workspace.deps.all;
+    editable = editablePythonSet.mkVirtualEnv "{{ project_name }}-dev-env" workspace.deps.all;
   };
 }

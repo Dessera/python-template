@@ -5,22 +5,38 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
 
-    poetry2nix = {
-      url = "github:nix-community/poetry2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     nixcode = {
       url = "github:Dessera/nixcode";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-parts.follows = "flake-parts";
     };
+
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
+      nixpkgs,
       flake-parts,
-      poetry2nix,
+      pyproject-nix,
+      uv2nix,
+      pyproject-build-systems,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } (
@@ -29,33 +45,71 @@
         systems = [ "x86_64-linux" ];
 
         perSystem =
-          { pkgs, system, ... }:
+          { system, ... }:
           let
-            {% set major, minor = py_version.split('.') %}
-            python = pkgs.python{{ major }}{{ minor }};
-            py = import ./python.nix {
-              inherit pkgs poetry2nix python;
+            pkgs = import nixpkgs {
+              inherit system;
+              config = {
+                allowUnfree = true;
+              };
             };
 
+            {% set major, minor = py_version.split('.') %}
+            python = pkgs.python{{ major }}{{ minor }};
             codium = withSystem system ({ inputs', ... }: inputs'.nixcode.packages.python);
+
+            py = import ./python.nix {
+              inherit
+                pkgs
+                python
+                uv2nix
+                pyproject-nix
+                pyproject-build-systems
+                ;
+            };
           in
           {
-            packages = py.packages.default;
+            packages = {
+              default = py.packages.default;
+            };
 
             devShells = {
               default = pkgs.mkShell {
                 packages =
-                  (with pkgs; [
+                  [
+                    py.env.editable
+                    codium
+                  ]
+                  ++ (with pkgs; [
+                    uv
                     nixd
                     nixfmt-rfc-style
 
-                    py.env.default
-                    ruff
-                    poetry
-                  ])
-                  ++ [
-                    codium
-                  ];
+                    mypy
+                  ]);
+                env = {
+                  UV_NO_SYNC = "1";
+                  UV_PYTHON_DOWNLOADS = "never";
+                  UV_PYTHON = "${py.env.editable}/bin/python";
+                };
+                shellHook = ''
+                  unset PYTHONPATH
+                  export REPO_ROOT=$(git rev-parse --show-toplevel)
+                '';
+              };
+
+              uv = pkgs.mkShell {
+                packages = [ python pkgs.uv ];
+
+                env = {
+                  UV_NO_SYNC = "1";
+                  UV_PYTHON_DOWNLOADS = "never";
+                  UV_PYTHON = "${python}/bin/python";
+                };
+                shellHook = ''
+                  unset PYTHONPATH
+                  export REPO_ROOT=$(git rev-parse --show-toplevel)
+                '';
               };
             };
           };
