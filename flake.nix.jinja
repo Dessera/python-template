@@ -5,11 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
 
-    nixcode = {
-      url = "github:Dessera/nixcode";
-      inputs.flake-parts.follows = "flake-parts";
-    };
-
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -29,16 +24,6 @@
     };
   };
 
-  nixConfig = {
-    extra-substituters = [
-      "https://nixcode.cachix.org"
-    ];
-
-    extra-trusted-public-keys = [
-      "nixcode.cachix.org-1:6FvhF+vlN7gCzQ10JIKVldbG59VfYVzxhH/+KGHvMhw="
-    ];
-  };
-
   outputs =
     {
       nixpkgs,
@@ -54,18 +39,10 @@
         systems = [ "x86_64-linux" ];
 
         perSystem =
-          { system, ... }:
+          { pkgs, ... }:
           let
-            pkgs = import nixpkgs {
-              inherit system;
-              config = {
-                allowUnfree = true;
-              };
-            };
-
             {% set major, minor = py_version.split('.') %}
             python = pkgs.python{{ major }}{{ minor }};
-            code = withSystem system ({ inputs', ... }: inputs'.nixcode.packages.nixcode-python);
 
             py = import ./python.nix {
               inherit
@@ -85,11 +62,7 @@
             devShells = {
               default = pkgs.mkShell {
                 packages =
-                  [
-                    py.env.editable
-                    code
-                  ]
-                  ++ (with pkgs; [
+                  [ py.env.editable ] ++ (with pkgs; [
                     uv
                     nixd
                     nixfmt-rfc-style
